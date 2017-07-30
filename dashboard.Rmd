@@ -1,0 +1,101 @@
+---
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+---
+
+<style>
+
+body {
+  padding-top:10px
+}
+
+.navbar{
+  visibility: hidden
+}
+
+</style>
+
+```{r setup, include=FALSE}
+
+library(googlesheets)
+library(magrittr)
+library(ggplot2)
+library(dplyr)
+library(viridis)
+library(wordcloud)
+library(lubridate)
+library(flexdashboard)
+
+process_word = function(x){ 
+    if(!is.na(x)){
+        splits = unlist(strsplit(x, ' '))
+        if(length(splits) > 1){
+            return(NULL)
+        }
+        if(nchar(x, allowNA = TRUE) > 15){
+            return(NULL)
+        }
+        return(x)
+    }else{
+        return(NULL)
+    }
+}
+
+
+process_word_vector = function(word_vector){
+    processed_words = word_vector %>% sapply(process_word)
+    processed_words[sapply(processed_words, is.null)] <- NULL
+    return(data.frame(words = toupper(unlist(processed_words)), stringsAsFactors = FALSE))
+}
+
+
+wine_sheet = gs_title('WinePartyJuly2017')
+data = wine_sheet %>% gs_read
+
+names(data) = c("timestamp", "first_name", "wine_number", "rating", "tasting_notes")
+
+data$timestamp = mdy_hms(data$timestamp)
+
+summary_table = data %>% group_by(wine_number) %>% summarise(mean_rating = mean(rating), sd_rating = sd(rating))
+
+words = process_word_vector(data$tasting_notes)
+word_counts = words %>% count(words) %>% arrange(desc(n))
+```
+
+Row
+-----------------------------------------------------------------------
+
+### Overall Ratings
+
+```{r}
+rating_graph = ggplot(summary_table, aes(x = factor(wine_number), y = mean_rating, fill = mean_rating)) + 
+                   geom_bar(stat = "identity", position = position_dodge(), color = 'black') +
+                   scale_fill_viridis(guide = FALSE) + 
+                   geom_errorbar(aes(ymin = mean_rating - sd_rating, ymax = mean_rating + sd_rating), width = .2, position = position_dodge(.9)) +
+                   labs(x = "Wine Number", y = "Rating")
+rating_graph
+```
+
+
+### Primary Tasting Note Word Cloud
+
+```{r}
+wordcloud(word_counts$words, word_counts$n, max.words = 100, scale=c(2,.75), min.freq = 1, col = viridis(8, begin = .1, end = .95, option = 'C'))
+```
+
+Row
+-----------------------------------------------------------------------
+
+### Total Ratings
+
+```{r}
+valueBox(nrow(data), icon = "fa-glass")
+```
+
+### Last Refresh
+
+```{r}
+valueBox(Sys.time(), icon = "fa-clock-o")
+```
+
